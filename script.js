@@ -216,12 +216,18 @@ let isPaused = false;
 let selectedPointLabel = null;
 const masterSentence = "Retrieve relevant chunks before composing a grounded answer.";
 let retrievalState = {
-  running: false,
+  phase: "idle",
+  phaseStartedAt: 0,
   startedAt: 0,
   anchor: [0, 0, 0],
   topChunks: [],
+  topWords: [],
   persistUntil: 0,
+  modalShown: false,
 };
+const MASTER_PREVIEW_MS = 2200;
+const LOADING_MS = 1400;
+const REVEAL_MS = 3400;
 
 function createVector(label) {
   let seed = 0;
@@ -316,6 +322,10 @@ function openTopWordsModal(topWords) {
 }
 
 function getChunkIntensity(label, now) {
+  if (retrievalState.phase !== "revealing" && retrievalState.phase !== "done") {
+    return 0;
+  }
+
   const index = retrievalState.topChunks.findIndex((chunk) => chunk.label === label);
   if (index === -1) {
     return 0;
@@ -328,6 +338,27 @@ function getChunkIntensity(label, now) {
   const pulse = 0.55 + 0.45 * Math.sin((elapsed - revealDelay) * 0.02);
 
   return raw * pulse;
+}
+
+function getChunkRevealProgress(label, now) {
+  if (retrievalState.phase !== "revealing" && retrievalState.phase !== "done") {
+    return 0;
+  }
+
+  const index = retrievalState.topChunks.findIndex((chunk) => chunk.label === label);
+  if (index === -1) {
+    return 0;
+  }
+
+  const elapsed = now - retrievalState.startedAt;
+  const revealDelay = index * 420;
+  return Math.min(Math.max((elapsed - revealDelay) / 580, 0), 1);
+}
+
+function easeOutBack(value) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(value - 1, 3) + c1 * Math.pow(value - 1, 2);
 }
 
 function resize() {
@@ -445,17 +476,20 @@ function drawLinks() {
 }
 
 function drawRetrievalOverlay(now) {
-  if (!retrievalState.topChunks.length) {
+  if (
+    !retrievalState.topChunks.length ||
+    (retrievalState.phase !== "revealing" && retrievalState.phase !== "done")
+  ) {
     return;
   }
 
   const elapsed = now - retrievalState.startedAt;
   const anchorProjection = project(retrievalState.anchor);
-  const anchorAlpha = retrievalState.running ? Math.min(0.95, elapsed / 450) : 0.75;
+  const anchorAlpha = retrievalState.phase === "revealing" ? Math.min(0.95, elapsed / 450) : 0.75;
 
   retrievalState.topChunks.forEach((chunk, index) => {
     const chunkProjection = project(chunk.position);
-    const reveal = retrievalState.running
+    const reveal = retrievalState.phase === "revealing"
       ? Math.min(Math.max((elapsed - index * 240) / 700, 0), 1)
       : 1;
 
@@ -476,7 +510,7 @@ function drawRetrievalOverlay(now) {
   ctx.beginPath();
   ctx.fillStyle = `rgba(255, 214, 102, ${anchorAlpha})`;
   ctx.shadowColor = "rgba(255, 214, 102, 0.7)";
-  ctx.shadowBlur = retrievalState.running ? 28 : 18;
+  ctx.shadowBlur = retrievalState.phase === "revealing" ? 28 : 18;
   ctx.arc(anchorProjection.x, anchorProjection.y, 6.5, 0, Math.PI * 2);
   ctx.fill();
 
@@ -512,17 +546,20 @@ function drawPoints(pointer, now) {
     ctx.beginPath();
     ctx.fillStyle = `${point.color}cc`;
     const chunkBoost = getChunkIntensity(point.label, now);
+    const revealProgress = getChunkRevealProgress(point.label, now);
+    const poppedScale = revealProgress ? 1 + easeOutBack(revealProgress) * 0.5 : 1;
+    const drawRadius = point.radius * poppedScale;
     ctx.shadowBlur =
       hoveredPoint?.label === point.label || selectedPointLabel === point.label
         ? 28
         : 16 + chunkBoost * 18;
     ctx.shadowColor = point.color;
-    ctx.arc(point.x, point.y, point.radius, 0, Math.PI * 2);
+    ctx.arc(point.x, point.y, drawRadius, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.beginPath();
     ctx.fillStyle = "rgba(255,255,255,0.88)";
-    ctx.arc(point.x, point.y, Math.max(1.5, point.radius * 0.3), 0, Math.PI * 2);
+    ctx.arc(point.x, point.y, Math.max(1.5, drawRadius * 0.3), 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -565,18 +602,43 @@ function animate(now) {
     rotationY += autoSpinY;
   }
 
-  if (retrievalState.running && now - retrievalState.startedAt > 2600) {
-    retrievalState.running = false;
+  if (retrievalState.phase === "showing-master" && now - retrievalState.phaseStartedAt > MASTER_PREVIEW_MS) {
+    retrievalState.phase = "loading";
+    retrievalState.phaseStartedAt = now;
+    retrievalStatus.classList.add("is-loading");
+    retrievalStatus.textContent = "Searching vector space...";
+  }
+
+  if (retrievalState.phase === "loading" && now - retrievalState.phaseStartedAt > LOADING_MS) {
+    retrievalState.phase = "revealing";
+    retrievalState.phaseStartedAt = now;
+    retrievalState.startedAt = now;
+    retrievalStatus.classList.remove("is-loading");
+    retrievalStatus.textContent = "Returning chunks...";
+  }
+
+  if (retrievalState.phase === "revealing" && now - retrievalState.startedAt > REVEAL_MS) {
+    retrievalState.phase = "done";
     retrievalState.persistUntil = now + 3600;
+    retrievalStatus.textContent = `Top chunks: ${retrievalState.topChunks
+      .map((chunk) => chunk.label)
+      .join(" -> ")}`;
     returnButton.classList.remove("is-running");
     returnButton.textContent = "Return chunks";
     returnButton.setAttribute("aria-pressed", "false");
+    returnButton.disabled = false;
+    if (!retrievalState.modalShown && retrievalState.topWords.length) {
+      openTopWordsModal(retrievalState.topWords);
+      retrievalState.modalShown = true;
+    }
   }
 
-  if (!retrievalState.running && retrievalState.persistUntil && now > retrievalState.persistUntil) {
+  if (retrievalState.phase === "done" && retrievalState.persistUntil && now > retrievalState.persistUntil) {
+    retrievalState.phase = "idle";
     retrievalState.topChunks = [];
+    retrievalState.topWords = [];
     retrievalState.persistUntil = 0;
-    retrievalStatus.textContent = "Click Return chunks to fetch top 3 related dots.";
+    retrievalStatus.textContent = "Click Return chunks to fetch related chunks.";
   }
 
   draw(now);
@@ -658,21 +720,24 @@ returnButton.addEventListener("click", () => {
   const { anchor, topChunks, topWords } = resolveRetrieval(masterSentence);
 
   retrievalState = {
-    running: true,
-    startedAt: performance.now(),
+    phase: "showing-master",
+    phaseStartedAt: performance.now(),
+    startedAt: 0,
     anchor,
     topChunks,
+    topWords,
     persistUntil: 0,
+    modalShown: false,
   };
 
+  closeTopWordsModal();
   selectedPointLabel = topChunks[0]?.label ?? null;
   returnButton.classList.add("is-running");
-  returnButton.textContent = "Returning...";
+  returnButton.textContent = "Running...";
   returnButton.setAttribute("aria-pressed", "true");
-  retrievalStatus.textContent = `Master sentence: "${masterSentence}" Top chunks: ${topChunks
-    .map((chunk) => chunk.label)
-    .join(" -> ")}`;
-  openTopWordsModal(topWords);
+  returnButton.disabled = true;
+  retrievalStatus.classList.remove("is-loading");
+  retrievalStatus.textContent = `Master sentence: "${masterSentence}"`;
 });
 
 resultModalClose.addEventListener("click", closeTopWordsModal);

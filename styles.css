@@ -152,6 +152,12 @@ canvas {
   border-color: rgba(255, 214, 102, 0.72);
 }
 
+.return-button:disabled {
+  opacity: 0.74;
+  cursor: wait;
+  transform: none;
+}
+
 .retrieval-status {
   position: absolute;
   top: 7.2rem;
@@ -165,6 +171,30 @@ canvas {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
   line-height: 1.5;
+}
+
+.retrieval-status.is-loading {
+  padding-left: 2rem;
+}
+
+.retrieval-status.is-loading::before {
+  content: "";
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 214, 102, 0.35);
+  border-top-color: rgba(255, 214, 102, 0.95);
+  transform: translateY(-50%);
+  animation: retrieval-spin 700ms linear infinite;
+}
+
+@keyframes retrieval-spin {
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
 }
 
 .result-modal {
