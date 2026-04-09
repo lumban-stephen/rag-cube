@@ -167,6 +167,76 @@ canvas {
   line-height: 1.5;
 }
 
+.result-modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(1, 7, 14, 0.68);
+  backdrop-filter: blur(8px);
+  z-index: 30;
+}
+
+.result-modal.hidden {
+  display: none;
+}
+
+.result-modal-card {
+  width: min(460px, 100%);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 214, 102, 0.3);
+  background: rgba(13, 21, 33, 0.96);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+  padding: 1rem 1.1rem 0.95rem;
+  color: var(--text-main);
+}
+
+.result-modal-card h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.result-modal-card p {
+  margin: 0.5rem 0 0.75rem;
+  color: rgba(232, 244, 255, 0.82);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.result-modal-card ol {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.26rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.77rem;
+}
+
+.result-modal-card li {
+  color: rgba(232, 244, 255, 0.96);
+}
+
+.result-modal-card button {
+  margin-top: 0.85rem;
+  padding: 0.58rem 0.8rem;
+  border: 1px solid rgba(157, 232, 255, 0.28);
+  border-radius: 10px;
+  background: rgba(7, 15, 28, 0.86);
+  color: var(--text-main);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.result-modal-card button:hover {
+  border-color: rgba(157, 232, 255, 0.52);
+  background: rgba(15, 33, 58, 0.92);
+}
+
 .hidden {
   opacity: 0;
 }

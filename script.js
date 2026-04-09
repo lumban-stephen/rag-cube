@@ -3,6 +3,10 @@ const tooltip = document.getElementById("tooltip");
 const pauseButton = document.getElementById("pause-button");
 const returnButton = document.getElementById("return-button");
 const retrievalStatus = document.getElementById("retrieval-status");
+const resultModal = document.getElementById("result-modal");
+const resultModalSubtitle = document.getElementById("result-modal-subtitle");
+const resultModalList = document.getElementById("result-modal-list");
+const resultModalClose = document.getElementById("result-modal-close");
 const ctx = canvas.getContext("2d");
 
 const clusters = [
@@ -269,7 +273,7 @@ function squaredDistance(a, b) {
   return dx * dx + dy * dy + dz * dz;
 }
 
-function resolveTopChunks(sentence) {
+function resolveRetrieval(sentence) {
   const sentenceTokens = sentence
     .split(/\s+/)
     .map(normalizeToken)
@@ -279,15 +283,36 @@ function resolveTopChunks(sentence) {
   const matchedPoints = points.filter((point) => tokenSet.has(normalizeToken(point.label)));
   const anchor = averagePosition(matchedPoints);
 
-  const topChunks = points
+  const rankedPoints = points
     .map((point) => ({
       ...point,
       score: squaredDistance(point.position, anchor),
     }))
-    .sort((a, b) => a.score - b.score)
-    .slice(0, 3);
+    .sort((a, b) => a.score - b.score);
 
-  return { anchor, topChunks };
+  return {
+    anchor,
+    topChunks: rankedPoints.slice(0, 3),
+    topWords: rankedPoints.slice(0, 10),
+  };
+}
+
+function closeTopWordsModal() {
+  resultModal.classList.add("hidden");
+}
+
+function openTopWordsModal(topWords) {
+  resultModalSubtitle.textContent = `Master sentence: "${masterSentence}"`;
+  resultModalList.innerHTML = "";
+
+  topWords.forEach((word) => {
+    const item = document.createElement("li");
+    const similarity = (1 / (1 + word.score)).toFixed(3);
+    item.textContent = `${word.label}  [${word.cluster}]  sim:${similarity}`;
+    resultModalList.appendChild(item);
+  });
+
+  resultModal.classList.remove("hidden");
 }
 
 function getChunkIntensity(label, now) {
@@ -630,7 +655,7 @@ pauseButton.addEventListener("click", () => {
 });
 
 returnButton.addEventListener("click", () => {
-  const { anchor, topChunks } = resolveTopChunks(masterSentence);
+  const { anchor, topChunks, topWords } = resolveRetrieval(masterSentence);
 
   retrievalState = {
     running: true,
@@ -647,6 +672,21 @@ returnButton.addEventListener("click", () => {
   retrievalStatus.textContent = `Master sentence: "${masterSentence}" Top chunks: ${topChunks
     .map((chunk) => chunk.label)
     .join(" -> ")}`;
+  openTopWordsModal(topWords);
+});
+
+resultModalClose.addEventListener("click", closeTopWordsModal);
+
+resultModal.addEventListener("click", (event) => {
+  if (event.target === resultModal) {
+    closeTopWordsModal();
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !resultModal.classList.contains("hidden")) {
+    closeTopWordsModal();
+  }
 });
 
 window.addEventListener("resize", resize);
