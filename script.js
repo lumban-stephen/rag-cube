@@ -3,6 +3,8 @@ const tooltip = document.getElementById("tooltip");
 const pauseButton = document.getElementById("pause-button");
 const returnButton = document.getElementById("return-button");
 const retrievalStatus = document.getElementById("retrieval-status");
+const masterStage = document.getElementById("master-stage");
+const masterStageText = document.getElementById("master-stage-text");
 const resultModal = document.getElementById("result-modal");
 const resultModalSubtitle = document.getElementById("result-modal-subtitle");
 const resultModalList = document.getElementById("result-modal-list");
@@ -307,14 +309,45 @@ function closeTopWordsModal() {
   resultModal.classList.add("hidden");
 }
 
+function showMasterStage(text) {
+  masterStageText.textContent = text;
+  masterStage.classList.remove("hidden");
+}
+
+function hideMasterStage() {
+  masterStage.classList.add("hidden");
+}
+
 function openTopWordsModal(topWords) {
   resultModalSubtitle.textContent = `Master sentence: "${masterSentence}"`;
   resultModalList.innerHTML = "";
 
-  topWords.forEach((word) => {
+  topWords.forEach((word, index) => {
     const item = document.createElement("li");
+    const rank = document.createElement("span");
+    const wordWrap = document.createElement("div");
+    const wordText = document.createElement("span");
+    const clusterText = document.createElement("span");
+    const score = document.createElement("span");
+
     const similarity = (1 / (1 + word.score)).toFixed(3);
-    item.textContent = `${word.label}  [${word.cluster}]  sim:${similarity}`;
+    rank.className = `result-rank ${index < 3 ? "top" : ""}`.trim();
+    rank.textContent = `#${index + 1}`;
+
+    wordWrap.className = "result-word-wrap";
+    wordText.className = "result-word";
+    wordText.textContent = word.label;
+    clusterText.className = "result-cluster";
+    clusterText.textContent = word.cluster;
+    wordWrap.appendChild(wordText);
+    wordWrap.appendChild(clusterText);
+
+    score.className = "result-score";
+    score.textContent = `sim ${similarity}`;
+
+    item.appendChild(rank);
+    item.appendChild(wordWrap);
+    item.appendChild(score);
     resultModalList.appendChild(item);
   });
 
@@ -605,6 +638,7 @@ function animate(now) {
   if (retrievalState.phase === "showing-master" && now - retrievalState.phaseStartedAt > MASTER_PREVIEW_MS) {
     retrievalState.phase = "loading";
     retrievalState.phaseStartedAt = now;
+    hideMasterStage();
     retrievalStatus.classList.add("is-loading");
     retrievalStatus.textContent = "Searching vector space...";
   }
@@ -639,6 +673,7 @@ function animate(now) {
     retrievalState.topWords = [];
     retrievalState.persistUntil = 0;
     retrievalStatus.textContent = "Click Return chunks to fetch related chunks.";
+    hideMasterStage();
   }
 
   draw(now);
@@ -731,6 +766,7 @@ returnButton.addEventListener("click", () => {
   };
 
   closeTopWordsModal();
+  showMasterStage(masterSentence);
   selectedPointLabel = topChunks[0]?.label ?? null;
   returnButton.classList.add("is-running");
   returnButton.textContent = "Running...";
