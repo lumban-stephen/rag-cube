@@ -1,6 +1,8 @@
 const canvas = document.getElementById("vector-canvas");
 const tooltip = document.getElementById("tooltip");
 const pauseButton = document.getElementById("pause-button");
+const returnButton = document.getElementById("return-button");
+const retrievalStatus = document.getElementById("retrieval-status");
 const ctx = canvas.getContext("2d");
 
 const clusters = [
@@ -208,6 +210,14 @@ let lastPointer = null;
 let hoveredPoint = null;
 let isPaused = false;
 let selectedPointLabel = null;
+const masterSentence = "Retrieve relevant chunks before composing a grounded answer.";
+let retrievalState = {
+  running: false,
+  startedAt: 0,
+  anchor: [0, 0, 0],
+  topChunks: [],
+  persistUntil: 0,
+};
 
 function createVector(label) {
   let seed = 0;
@@ -225,6 +235,74 @@ function createVector(label) {
   }
 
   return `[${values.join(", ")}]`;
+}
+
+function normalizeToken(value) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/s$/, "");
+}
+
+function averagePosition(sourcePoints) {
+  if (!sourcePoints.length) {
+    return [0, 0, 0];
+  }
+
+  const totals = sourcePoints.reduce(
+    (accumulator, point) => {
+      accumulator[0] += point.position[0];
+      accumulator[1] += point.position[1];
+      accumulator[2] += point.position[2];
+      return accumulator;
+    },
+    [0, 0, 0],
+  );
+
+  return totals.map((value) => value / sourcePoints.length);
+}
+
+function squaredDistance(a, b) {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  const dz = a[2] - b[2];
+  return dx * dx + dy * dy + dz * dz;
+}
+
+function resolveTopChunks(sentence) {
+  const sentenceTokens = sentence
+    .split(/\s+/)
+    .map(normalizeToken)
+    .filter(Boolean);
+  const tokenSet = new Set(sentenceTokens);
+
+  const matchedPoints = points.filter((point) => tokenSet.has(normalizeToken(point.label)));
+  const anchor = averagePosition(matchedPoints);
+
+  const topChunks = points
+    .map((point) => ({
+      ...point,
+      score: squaredDistance(point.position, anchor),
+    }))
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 3);
+
+  return { anchor, topChunks };
+}
+
+function getChunkIntensity(label, now) {
+  const index = retrievalState.topChunks.findIndex((chunk) => chunk.label === label);
+  if (index === -1) {
+    return 0;
+  }
+
+  const elapsed = now - retrievalState.startedAt;
+  const revealDelay = index * 220;
+  const revealWindow = 900;
+  const raw = Math.min(Math.max((elapsed - revealDelay) / revealWindow, 0), 1);
+  const pulse = 0.55 + 0.45 * Math.sin((elapsed - revealDelay) * 0.02);
+
+  return raw * pulse;
 }
 
 function resize() {
@@ -341,7 +419,49 @@ function drawLinks() {
   });
 }
 
-function drawPoints(pointer) {
+function drawRetrievalOverlay(now) {
+  if (!retrievalState.topChunks.length) {
+    return;
+  }
+
+  const elapsed = now - retrievalState.startedAt;
+  const anchorProjection = project(retrievalState.anchor);
+  const anchorAlpha = retrievalState.running ? Math.min(0.95, elapsed / 450) : 0.75;
+
+  retrievalState.topChunks.forEach((chunk, index) => {
+    const chunkProjection = project(chunk.position);
+    const reveal = retrievalState.running
+      ? Math.min(Math.max((elapsed - index * 240) / 700, 0), 1)
+      : 1;
+
+    if (reveal <= 0) {
+      return;
+    }
+
+    ctx.strokeStyle = `rgba(255, 214, 102, ${0.18 + reveal * 0.45})`;
+    ctx.lineWidth = 1.2 + reveal * 1.3;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.moveTo(anchorProjection.x, anchorProjection.y);
+    ctx.lineTo(chunkProjection.x, chunkProjection.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  ctx.beginPath();
+  ctx.fillStyle = `rgba(255, 214, 102, ${anchorAlpha})`;
+  ctx.shadowColor = "rgba(255, 214, 102, 0.7)";
+  ctx.shadowBlur = retrievalState.running ? 28 : 18;
+  ctx.arc(anchorProjection.x, anchorProjection.y, 6.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.font = '500 11px "IBM Plex Mono", monospace';
+  ctx.fillStyle = `rgba(255, 234, 185, ${anchorAlpha})`;
+  ctx.fillText("MASTER", anchorProjection.x + 9, anchorProjection.y - 9);
+  ctx.shadowBlur = 0;
+}
+
+function drawPoints(pointer, now) {
   const projectedPoints = points
     .map((point) => {
       const projection = project(point.position);
@@ -366,8 +486,11 @@ function drawPoints(pointer) {
 
     ctx.beginPath();
     ctx.fillStyle = `${point.color}cc`;
+    const chunkBoost = getChunkIntensity(point.label, now);
     ctx.shadowBlur =
-      hoveredPoint?.label === point.label || selectedPointLabel === point.label ? 28 : 16;
+      hoveredPoint?.label === point.label || selectedPointLabel === point.label
+        ? 28
+        : 16 + chunkBoost * 18;
     ctx.shadowColor = point.color;
     ctx.arc(point.x, point.y, point.radius, 0, Math.PI * 2);
     ctx.fill();
@@ -381,12 +504,13 @@ function drawPoints(pointer) {
   ctx.shadowBlur = 0;
 }
 
-function draw() {
+function draw(now) {
   ctx.clearRect(0, 0, width, height);
   drawBackgroundGlow();
   drawCube();
   drawLinks();
-  drawPoints(lastPointer);
+  drawRetrievalOverlay(now);
+  drawPoints(lastPointer, now);
   updateTooltip();
 }
 
@@ -410,13 +534,27 @@ function updateTooltip() {
   tooltip.classList.remove("hidden");
 }
 
-function animate() {
+function animate(now) {
   if (!isDragging && !isPaused) {
     rotationX += autoSpinX;
     rotationY += autoSpinY;
   }
 
-  draw();
+  if (retrievalState.running && now - retrievalState.startedAt > 2600) {
+    retrievalState.running = false;
+    retrievalState.persistUntil = now + 3600;
+    returnButton.classList.remove("is-running");
+    returnButton.textContent = "Return chunks";
+    returnButton.setAttribute("aria-pressed", "false");
+  }
+
+  if (!retrievalState.running && retrievalState.persistUntil && now > retrievalState.persistUntil) {
+    retrievalState.topChunks = [];
+    retrievalState.persistUntil = 0;
+    retrievalStatus.textContent = "Click Return chunks to fetch top 3 related dots.";
+  }
+
+  draw(now);
   requestAnimationFrame(animate);
 }
 
@@ -489,6 +627,26 @@ pauseButton.addEventListener("click", () => {
   pauseButton.classList.toggle("is-paused", isPaused);
   pauseButton.textContent = isPaused ? "Resume motion" : "Pause motion";
   pauseButton.setAttribute("aria-pressed", String(isPaused));
+});
+
+returnButton.addEventListener("click", () => {
+  const { anchor, topChunks } = resolveTopChunks(masterSentence);
+
+  retrievalState = {
+    running: true,
+    startedAt: performance.now(),
+    anchor,
+    topChunks,
+    persistUntil: 0,
+  };
+
+  selectedPointLabel = topChunks[0]?.label ?? null;
+  returnButton.classList.add("is-running");
+  returnButton.textContent = "Returning...";
+  returnButton.setAttribute("aria-pressed", "true");
+  retrievalStatus.textContent = `Master sentence: "${masterSentence}" Top chunks: ${topChunks
+    .map((chunk) => chunk.label)
+    .join(" -> ")}`;
 });
 
 window.addEventListener("resize", resize);

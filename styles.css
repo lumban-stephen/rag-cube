@@ -124,6 +124,49 @@ canvas {
   border-color: rgba(144, 255, 178, 0.42);
 }
 
+.return-button {
+  position: absolute;
+  top: 4.2rem;
+  right: 1.2rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(255, 214, 102, 0.3);
+  border-radius: 999px;
+  background: rgba(31, 22, 7, 0.76);
+  color: #ffeab9;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 140ms ease, transform 140ms ease, border-color 140ms ease;
+}
+
+.return-button:hover {
+  background: rgba(65, 47, 10, 0.85);
+  border-color: rgba(255, 214, 102, 0.55);
+  transform: translateY(-1px);
+}
+
+.return-button.is-running {
+  background: rgba(88, 63, 10, 0.92);
+  border-color: rgba(255, 214, 102, 0.72);
+}
+
+.retrieval-status {
+  position: absolute;
+  top: 7.2rem;
+  right: 1.2rem;
+  max-width: min(340px, calc(100% - 2.4rem));
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(255, 214, 102, 0.22);
+  border-radius: 12px;
+  background: rgba(31, 22, 7, 0.56);
+  color: rgba(255, 234, 185, 0.9);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
 .hidden {
   opacity: 0;
 }
@@ -169,5 +212,17 @@ canvas {
   .pause-button {
     top: 1rem;
     right: 1rem;
+  }
+
+  .return-button {
+    top: 3.9rem;
+    right: 1rem;
+  }
+
+  .retrieval-status {
+    top: 6.8rem;
+    right: 1rem;
+    left: 1rem;
+    max-width: none;
   }
 }
